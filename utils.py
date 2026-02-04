@@ -2,6 +2,7 @@ import json
 import os
 import re
 import IPython
+import tqdm
 
 import transformer_lens
 from transformer_lens import HookedTransformer
@@ -66,7 +67,25 @@ def get_test_response(
     t.cuda.empty_cache()
     return out
 
-def extract_answer(text: str) -> float:
+def load_jsonl(file_path: str) -> list:
+    """Load a JSONL file and return a list of dictionaries."""
+    data = []
+    with open(file_path, "r") as f:
+        for line in f:
+            item = json.loads(line)
+            data.append(item)
+    return data
+
+def save_jsonl(data: list, file_path: str) -> None:
+    """Save a list of dictionaries to a JSONL file."""
+    dir_path = os.path.dirname(file_path)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
+    with open(file_path, "w") as f:
+        for item in data:
+            f.write(json.dumps(item) + "\n")
+
+def extract_answer(text: str) -> float: # grabs an int from the gsmm8k answer field
     pattern = r'\\boxed\{([^}]+)\}'
     match = re.search(pattern, text)
     
@@ -81,12 +100,15 @@ def extract_answer(text: str) -> float:
     try:
         return int(content)
     except ValueError:
-        raise ValueError(f"Content '{content}' inside \\boxed{{}} cannot be parsed as a number")
+        return None
 
-def parse_answer_value(answer_str: str) -> int:
+def parse_answer_value(answer_str: str) -> int: # grabs an int value from a non-empty \boxed{}
     """Parse the answer value from the answer string.
     The answer is always at the very end as "#### answer_value"."""
     assert "####" in answer_str, f"Answer string '{answer_str}' does not contain '####'"
     val_str = answer_str.split("####")[-1].strip()
     val_str = val_str.replace(",", "")
-    return int(val_str)
+    try:
+        return int(val_str)
+    except ValueError:
+        return None

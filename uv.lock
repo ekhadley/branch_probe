@@ -297,6 +297,7 @@ dependencies = [
     { name = "ipykernel" },
     { name = "jupyter" },
     { name = "torch" },
+    { name = "tqdm" },
     { name = "transformer-lens" },
 ]
 
@@ -305,6 +306,7 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=7.1.0" },
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "torch", specifier = ">=2.10.0" },
+    { name = "tqdm", specifier = ">=4.67.3" },
     { name = "transformer-lens", specifier = ">=2.17.0" },
 ]
 

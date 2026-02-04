@@ -23,7 +23,7 @@ else:
 
 #%%
 
-do_test_generation = True
+do_test_generation = False
 if do_test_generation:
     # prompt = "What is 2 + 2?"
     # prompt = "James writes a 3-page letter to 2 different friends twice a week. How many pages does he write a year?"
@@ -35,6 +35,7 @@ if do_test_generation:
 
 load_and_save_gsm8k = False
 if load_and_save_gsm8k:
+    save_path = "data/gsm8k.jsonl"
     
     gsm8k_dataset = datasets.load_dataset("openai/gsm8k", "main", split="train")
     gsm8k = []
@@ -42,42 +43,36 @@ if load_and_save_gsm8k:
         question = gsm8k_dataset["question"][i]
         answer = gsm8k_dataset["answer"][i]
         answer_value = parse_answer_value(answer)
+        assert answer_value is not None, f"Answer value is None for question: {question}"
         gsm8k.append({
             "question": question,
             "answer": answer,
             "answer_value": answer_value
         })
 
-    os.makedirs("data", exist_ok=True)
-    with open("data/gsm8k.jsonl", "w") as f:
-        for item in gsm8k:
-            f.write(json.dumps(item) + "\n")
-    print(f"Saved {len(gsm8k)} items to data/gsm8k.jsonl")
+    save_jsonl(gsm8k, save_path)
+    print(f"Saved {len(gsm8k)} items to {save_path}")
 
 #%%
 
 benchmark_gsm8k = True
 if benchmark_gsm8k:
-    import json
-    
-    with open("data/gsm8k.jsonl", "r") as f:
-        gsm8k = []
-        for line in f:
-            item = json.loads(line)
-            # Parse answer_value if not already present
-            if "answer_value" not in item:
-                item["answer_value"] = parse_answer_value(item["answer"])
-            gsm8k.append(item)
-    print(f"Loaded {len(gsm8k)} items from data/gsm8k.jsonl")
+    gsm8k_path = "data/gsm8k.jsonl"
+    gsm8k = load_jsonl(gsm8k_path)
+    print(gray, f"Loaded {len(gsm8k)} items from {gsm8k_path}", endc)
 
     max_new_tokens = 2048
-    n_trials_per_question = 256
-    batch_size = 16
+    n_trials_per_question = 2
+    batch_size = 1
     append_question = " Give your answer within \\boxed{}. You don't need to explain your answer."
 
-    for item in gsm8k:
+    n_batches_per_question = n_trials_per_question // batch_size
+    bar = tqdm.tqdm(gsm8k, ascii=" >=", ncols=120)
+    bench_results = []
+    for item in bar:
         question = item["question"]
         answer = item["answer"]
+        answer_value = item["answer_value"]
         question_formatted = question + append_question
 
         conv_toks = model.tokenizer.apply_chat_template(
@@ -86,22 +81,49 @@ if benchmark_gsm8k:
             return_tensors="pt",
             add_generation_prompt=True,
         ).to(model.cfg.device)
-
-        print(cyan, conv_toks, endc)
-        conv_str = model.tokenizer.decode(conv_toks[0])
-        print(lime, conv_str, endc)
+        prompt_len = conv_toks.shape[-1]
 
         conv_toks_batch = conv_toks.repeat(batch_size, 1)
-        resp_toks = model.generate(conv_toks_batch, max_new_tokens=max_new_tokens)
         
-        for i in range(batch_size):
-            resp_str = model.tokenizer.decode(resp_toks[i], verbose=True)
-            print(orange, resp_str, endc)
+        example_resp = None
+        answers = []
+        for _ in range(n_batches_per_question):
+            resp_toks = model.generate(conv_toks_batch, max_new_tokens=max_new_tokens, verbose=False)
+            
+            for i in range(batch_size):
+                resp_str = model.tokenizer.decode(resp_toks[i, prompt_len:])
+                if resp_toks[i, -1].item() != model.tokenizer.eot_token_id:
+                    print(red, f"model didnt complete its reasoning in the limit: {repr(resp_str)}", endc)
+                    continue
+                answer = extract_answer(resp_str)
+                if answer is None:
+                    print(red, f"answer couldnt be extracted from response: {repr(resp_str)}", endc)
+                    continue
+                example_resp = resp_str
+                answers.append(answer)
+        
+        if example_resp is not None:
+            print(answers)
+            grades = [1.0 if answer == answer_value else 0.0 for answer in answers]
+            accuracy = sum(grades) / len(grades)
+            bar.set_description(f"{yellow}Accuracy: {accuracy:.2f} ({len(answers)}/{n_trials_per_question})")
+            bench_result = {
+                "example_resp": example_resp,
+                "accuracy": accuracy,
+                "n_trials": len(answers),
+            }
+        else:
+            bench_result = {
+                "example_resp": None,
+                "accuracy": None,
+                "n_trials": len(answers),
+            }
+        
+        item[MODEL_NAME] = bench_result
 
-            answer = extract_answer(resp_str)
-            print(f"Model answer: {answer}")
-            print(f"Correct answer: {item['answer_value']}")
-        
         break
+
+    save_jsonl(gsm8k, gsm8k_path)
+    print(gray, f"Saved {len(gsm8k)} items with benchmark results to {gsm8k_path}", endc)
 
 #%%
