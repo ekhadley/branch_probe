@@ -95,7 +95,7 @@ def extract_answer(text: str) -> float: # grabs an int from the gsmm8k answer fi
     content = match.group(1).strip()
     
     if not content:
-        raise ValueError("\\boxed{} expression is empty")
+        return None
     
     try:
         return int(content)

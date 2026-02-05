@@ -4,7 +4,8 @@ from utils import *
 
 #%%
 
-MODEL_ID = "Qwen/Qwen3-1.7B"
+# MODEL_ID = "Qwen/Qwen3-1.7B"
+MODEL_ID = "Qwen/Qwen3-0.6B"
 MODEL_NAME = MODEL_ID.split("/")[-1]
 model = HookedTransformer.from_pretrained_no_processing(
     MODEL_ID,
@@ -62,14 +63,14 @@ if benchmark_gsm8k:
     print(gray, f"Loaded {len(gsm8k)} items from {gsm8k_path}", endc)
 
     max_new_tokens = 2048
-    n_trials_per_question = 2
-    batch_size = 1
+    n_trials_per_question = 64
+    batch_size = 16
     append_question = " Give your answer within \\boxed{}. You don't need to explain your answer."
 
     n_batches_per_question = n_trials_per_question // batch_size
-    bar = tqdm.tqdm(gsm8k, ascii=" >=", ncols=120)
+    bar = tqdm.tqdm(gsm8k[:32], ascii=" >=", ncols=120)
     bench_results = []
-    for item in bar:
+    for i, item in enumerate(bar):
         question = item["question"]
         answer = item["answer"]
         answer_value = item["answer_value"]
@@ -89,10 +90,11 @@ if benchmark_gsm8k:
         answers = []
         for _ in range(n_batches_per_question):
             resp_toks = model.generate(conv_toks_batch, max_new_tokens=max_new_tokens, verbose=False)
+            print(resp_toks.shape)
             
-            for i in range(batch_size):
-                resp_str = model.tokenizer.decode(resp_toks[i, prompt_len:])
-                if resp_toks[i, -1].item() != model.tokenizer.eot_token_id:
+            for b in range(batch_size):
+                resp_str = model.tokenizer.decode(resp_toks[b, prompt_len:])
+                if resp_toks[b, -1].item() != model.tokenizer.eot_token_id:
                     print(red, f"model didnt complete its reasoning in the limit: {repr(resp_str)}", endc)
                     continue
                 answer = extract_answer(resp_str)
@@ -101,6 +103,8 @@ if benchmark_gsm8k:
                     continue
                 example_resp = resp_str
                 answers.append(answer)
+
+            t.cuda.empty_cache()
         
         if example_resp is not None:
             print(answers)
@@ -120,8 +124,6 @@ if benchmark_gsm8k:
             }
         
         item[MODEL_NAME] = bench_result
-
-        break
 
     save_jsonl(gsm8k, gsm8k_path)
     print(gray, f"Saved {len(gsm8k)} items with benchmark results to {gsm8k_path}", endc)
