@@ -62,7 +62,7 @@ if benchmark_gsm8k:
     gsm8k = load_jsonl(gsm8k_path)
     print(gray, f"Loaded {len(gsm8k)} items from {gsm8k_path}", endc)
 
-    max_new_tokens = 2048
+    max_new_tokens = 2_000
     n_trials_per_question = 64
     batch_size = 16
     append_question = " Give your answer within \\boxed{}. You don't need to explain your answer."
@@ -71,6 +71,8 @@ if benchmark_gsm8k:
     bar = tqdm.tqdm(gsm8k[:32], ascii=" >=", ncols=120)
     bench_results = []
     for i, item in enumerate(bar):
+        if MODEL_NAME in item.keys() and item[MODEL_NAME]["n_trials"] >= 0:
+            continue
         question = item["question"]
         answer = item["answer"]
         answer_value = item["answer_value"]
@@ -89,7 +91,7 @@ if benchmark_gsm8k:
         example_resp = None
         answers = []
         for _ in range(n_batches_per_question):
-            resp_toks = model.generate(conv_toks_batch, max_new_tokens=max_new_tokens, verbose=False)
+            resp_toks = model.generate(conv_toks_batch, max_new_tokens=max_new_tokens, verbose=True)
             print(resp_toks.shape)
             
             for b in range(batch_size):
@@ -123,9 +125,9 @@ if benchmark_gsm8k:
                 "n_trials": len(answers),
             }
         
-        item[MODEL_NAME] = bench_result
+        gsm8k[i][MODEL_NAME] = bench_result
+        save_jsonl(gsm8k, gsm8k_path)
 
-    save_jsonl(gsm8k, gsm8k_path)
     print(gray, f"Saved {len(gsm8k)} items with benchmark results to {gsm8k_path}", endc)
 
 #%%

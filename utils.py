@@ -85,12 +85,12 @@ def save_jsonl(data: list, file_path: str) -> None:
         for item in data:
             f.write(json.dumps(item) + "\n")
 
-def extract_answer(text: str) -> float: # grabs an int from the gsmm8k answer field
+def extract_answer(text: str) -> int: # grabs an int from the gsmm8k answer field
     pattern = r'\\boxed\{([^}]+)\}'
     match = re.search(pattern, text)
     
     if not match:
-        raise ValueError("No non-empty \\boxed{} expression found in text")
+        return None
     
     content = match.group(1).strip()
     
